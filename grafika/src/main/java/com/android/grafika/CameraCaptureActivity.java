@@ -19,6 +19,7 @@ package com.android.grafika;
 import android.opengl.EGL14;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
+import android.opengl.Matrix;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
@@ -185,8 +186,8 @@ public class CameraCaptureActivity extends Activity
         openCamera(1280, 720);      // updates mCameraPreviewWidth/Height
 
         // Set the preview aspect ratio.
-        AspectFrameLayout layout = (AspectFrameLayout) findViewById(R.id.cameraPreview_afl);
-        layout.setAspectRatio((double) mCameraPreviewWidth / mCameraPreviewHeight);
+        //AspectFrameLayout layout = (AspectFrameLayout) findViewById(R.id.cameraPreview_afl);
+        //layout.setAspectRatio((double) mCameraPreviewWidth / mCameraPreviewHeight);
 
         mGLView.onResume();
         mGLView.queueEvent(new Runnable() {
@@ -439,6 +440,7 @@ class CameraSurfaceRenderer implements GLSurfaceView.Renderer {
     private FullFrameRect mFullScreen;
 
     private final float[] mSTMatrix = new float[16];
+    private final float[] mMvpMatrix = new float[16];
     private int mTextureId;
 
     private SurfaceTexture mSurfaceTexture;
@@ -450,6 +452,8 @@ class CameraSurfaceRenderer implements GLSurfaceView.Renderer {
     private boolean mIncomingSizeUpdated;
     private int mIncomingWidth;
     private int mIncomingHeight;
+    private int mSurfaceWidth;
+    private int mSurfaceHeight;
 
     private int mCurrentFilter;
     private int mNewFilter;
@@ -591,7 +595,7 @@ class CameraSurfaceRenderer implements GLSurfaceView.Renderer {
      * so we at least know that they won't execute concurrently.)
      */
     public void setCameraPreviewSize(int width, int height) {
-        Log.d(TAG, "setCameraPreviewSize");
+        Log.d(TAG, "setCameraPreviewSize " + width + "x" + height);
         mIncomingWidth = width;
         mIncomingHeight = height;
         mIncomingSizeUpdated = true;
@@ -631,6 +635,8 @@ class CameraSurfaceRenderer implements GLSurfaceView.Renderer {
     @Override
     public void onSurfaceChanged(GL10 unused, int width, int height) {
         Log.d(TAG, "onSurfaceChanged " + width + "x" + height);
+        mSurfaceWidth = width;
+        mSurfaceHeight = height;
     }
 
     @Override
@@ -709,9 +715,18 @@ class CameraSurfaceRenderer implements GLSurfaceView.Renderer {
             mIncomingSizeUpdated = false;
         }
 
+        GLES20.glViewport(0, 0, mSurfaceWidth, mSurfaceHeight);
+
+        Matrix.setIdentityM(mMvpMatrix, 0);
+        float inputAspect = (float) mIncomingWidth / mIncomingHeight;
+        float outputAspect = (float) mSurfaceHeight / mSurfaceWidth;
+        Matrix.perspectiveM(mMvpMatrix, 0, 45, inputAspect / outputAspect, 0.1f, 100f);
+        Matrix.translateM(mMvpMatrix, 0, 0, 0, -3f);
+        Matrix.rotateM(mMvpMatrix, 0, 90, 0, 0, 1);
+
         // Draw the video frame.
         mSurfaceTexture.getTransformMatrix(mSTMatrix);
-        mFullScreen.drawFrame(mTextureId, mSTMatrix);
+        mFullScreen.drawFrame(mTextureId, mMvpMatrix, mSTMatrix);
 
         // Draw a flashing box if we're recording.  This only appears on screen.
         showBox = (mRecordingStatus == RECORDING_ON);

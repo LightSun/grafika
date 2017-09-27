@@ -35,13 +35,14 @@ public class Texture2dProgram {
     // Simple vertex shader, used for all programs.
     private static final String VERTEX_SHADER =
             "uniform mat4 uMVPMatrix;\n" +
-            "uniform mat4 uTexMatrix;\n" +
+            //"uniform mat4 uTexMatrix;\n" +
             "attribute vec4 aPosition;\n" +
             "attribute vec4 aTextureCoord;\n" +
             "varying vec2 vTextureCoord;\n" +
             "void main() {\n" +
             "    gl_Position = uMVPMatrix * aPosition;\n" +
-            "    vTextureCoord = (uTexMatrix * aTextureCoord).xy;\n" +
+            //"    vTextureCoord = (uTexMatrix * aTextureCoord).xy;\n" +
+            "    vTextureCoord = aTextureCoord.xy;\n" +
             "}\n";
 
     // Simple fragment shader for use with "normal" 2D textures.
@@ -118,7 +119,7 @@ public class Texture2dProgram {
     // Handles to the GL program and various components of it.
     private int mProgramHandle;
     private int muMVPMatrixLoc;
-    private int muTexMatrixLoc;
+    //private int muTexMatrixLoc;
     private int muKernelLoc;
     private int muTexOffsetLoc;
     private int muColorAdjustLoc;
@@ -171,8 +172,8 @@ public class Texture2dProgram {
         GlUtil.checkLocation(maTextureCoordLoc, "aTextureCoord");
         muMVPMatrixLoc = GLES20.glGetUniformLocation(mProgramHandle, "uMVPMatrix");
         GlUtil.checkLocation(muMVPMatrixLoc, "uMVPMatrix");
-        muTexMatrixLoc = GLES20.glGetUniformLocation(mProgramHandle, "uTexMatrix");
-        GlUtil.checkLocation(muTexMatrixLoc, "uTexMatrix");
+        //muTexMatrixLoc = GLES20.glGetUniformLocation(mProgramHandle, "uTexMatrix");
+        //GlUtil.checkLocation(muTexMatrixLoc, "uTexMatrix");
         muKernelLoc = GLES20.glGetUniformLocation(mProgramHandle, "uKernel");
         if (muKernelLoc < 0) {
             // no kernel in this one
@@ -302,8 +303,8 @@ public class Texture2dProgram {
         GlUtil.checkGlError("glUniformMatrix4fv");
 
         // Copy the texture transformation matrix over.
-        GLES20.glUniformMatrix4fv(muTexMatrixLoc, 1, false, texMatrix, 0);
-        GlUtil.checkGlError("glUniformMatrix4fv");
+        //GLES20.glUniformMatrix4fv(muTexMatrixLoc, 1, false, texMatrix, 0);
+        //GlUtil.checkGlError("glUniformMatrix4fv");
 
         // Enable the "aPosition" vertex attribute.
         GLES20.glEnableVertexAttribArray(maPositionLoc);
