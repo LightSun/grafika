@@ -17,6 +17,7 @@
 package com.android.grafika.gles;
 
 import java.nio.FloatBuffer;
+import java.util.Arrays;
 
 /**
  * Base class for stuff we like to draw.
@@ -90,7 +91,9 @@ public class Drawable2d {
             GlUtil.createFloatBuffer(FULL_RECTANGLE_TEX_COORDS);
 
 
+    private float[] vertices;
     private FloatBuffer mVertexArray;
+    private float[] textureCoords;
     private FloatBuffer mTexCoordArray;
     private int mVertexCount;
     private int mCoordsPerVertex;
@@ -138,6 +141,170 @@ public class Drawable2d {
         }
         mTexCoordStride = 2 * SIZEOF_FLOAT;
         mPrefab = shape;
+    }
+
+    public void setTransformation(final Transformation transformation) {
+        if (mPrefab != Prefab.FULL_RECTANGLE) {
+            return;
+        }
+
+        vertices = Arrays.copyOf(FULL_RECTANGLE_COORDS, FULL_RECTANGLE_COORDS.length);
+        textureCoords = new float[8];
+
+        if (transformation.cropRect != null) {
+            resolveCrop(transformation.cropRect.x, transformation.cropRect.y,
+                    transformation.cropRect.width, transformation.cropRect.height);
+        } else {
+            resolveCrop(Transformation.FULL_RECT.x, Transformation.FULL_RECT.y,
+                    Transformation.FULL_RECT.width, Transformation.FULL_RECT.height);
+        }
+        resolveFlip(transformation.flip);
+        resolveRotate(transformation.rotation);
+        if (transformation.inputSize != null && transformation.outputSize != null) {
+            resolveScale(transformation.inputSize.width, transformation.inputSize.height,
+                    transformation.outputSize.width, transformation.outputSize.height,
+                    transformation.scaleType);
+        }
+
+        mVertexArray = GlUtil.createFloatBuffer(vertices);
+        mTexCoordArray = GlUtil.createFloatBuffer(textureCoords);
+    }
+
+    private void resolveCrop(float x, float y, float width, float height) {
+        float minX = x;
+        float minY = y;
+        float maxX = minX + width;
+        float maxY = minY + height;
+
+        // left bottom
+        textureCoords[0] = minX;
+        textureCoords[1] = minY;
+        // right bottom
+        textureCoords[2] = maxX;
+        textureCoords[3] = minY;
+        // left top
+        textureCoords[4] = minX;
+        textureCoords[5] = maxY;
+        // right top
+        textureCoords[6] = maxX;
+        textureCoords[7] = maxY;
+    }
+
+    private void resolveFlip(int flip) {
+        switch (flip) {
+            case Transformation.FLIP_HORIZONTAL:
+                swap(textureCoords, 0, 2);
+                swap(textureCoords, 4, 6);
+                break;
+            case Transformation.FLIP_VERTICAL:
+                swap(textureCoords, 1, 5);
+                swap(textureCoords, 3, 7);
+                break;
+            case Transformation.FLIP_HORIZONTAL_VERTICAL:
+                swap(textureCoords, 0, 2);
+                swap(textureCoords, 4, 6);
+
+                swap(textureCoords, 1, 5);
+                swap(textureCoords, 3, 7);
+                break;
+            case Transformation.FLIP_NONE:
+            default:
+                break;
+        }
+    }
+
+    private void resolveRotate(int rotation) {
+        float x, y;
+        switch (rotation) {
+            case Transformation.ROTATION_90:
+                x = textureCoords[0];
+                y = textureCoords[1];
+                textureCoords[0] = textureCoords[4];
+                textureCoords[1] = textureCoords[5];
+                textureCoords[4] = textureCoords[6];
+                textureCoords[5] = textureCoords[7];
+                textureCoords[6] = textureCoords[2];
+                textureCoords[7] = textureCoords[3];
+                textureCoords[2] = x;
+                textureCoords[3] = y;
+                break;
+            case Transformation.ROTATION_180:
+                swap(textureCoords, 0, 6);
+                swap(textureCoords, 1, 7);
+                swap(textureCoords, 2, 4);
+                swap(textureCoords, 3, 5);
+                break;
+            case Transformation.ROTATION_270:
+                x = textureCoords[0];
+                y = textureCoords[1];
+                textureCoords[0] = textureCoords[2];
+                textureCoords[1] = textureCoords[3];
+                textureCoords[2] = textureCoords[6];
+                textureCoords[3] = textureCoords[7];
+                textureCoords[6] = textureCoords[4];
+                textureCoords[7] = textureCoords[5];
+                textureCoords[4] = x;
+                textureCoords[5] = y;
+                break;
+            case Transformation.ROTATION_0:
+            default:
+                break;
+        }
+    }
+
+    private void resolveScale(int inputWidth, int inputHeight, int outputWidth, int outputHeight,
+            int scaleType) {
+        if (scaleType == Transformation.SCALE_TYPE_FIT_XY) {
+            // The default is FIT_XY
+            return;
+        }
+
+        // Note: scale type need to be implemented by adjusting
+        // the vertices (not textureCoords).
+        if (inputWidth == outputWidth && inputHeight == outputHeight) {
+            // Optional optimization: If input size is the same as output size,
+            // there is no need to adjust vertices at all.
+            return;
+        }
+
+        float inputAspect = inputWidth / (float) inputHeight;
+        float outputAspect = outputWidth / (float) outputHeight;
+
+        if (scaleType == Transformation.SCALE_TYPE_CENTER_CROP) {
+            if (inputAspect < outputAspect) {
+                float heightRatio = outputAspect / inputAspect;
+                vertices[1] *= heightRatio;
+                vertices[3] *= heightRatio;
+                vertices[5] *= heightRatio;
+                vertices[7] *= heightRatio;
+            } else {
+                float widthRatio = inputAspect / outputAspect;
+                vertices[0] *= widthRatio;
+                vertices[2] *= widthRatio;
+                vertices[4] *= widthRatio;
+                vertices[6] *= widthRatio;
+            }
+        } else if (scaleType == Transformation.SCALE_TYPE_CENTER_INSIDE) {
+            if (inputAspect < outputAspect) {
+                float widthRatio = inputAspect / outputAspect;
+                vertices[0] *= widthRatio;
+                vertices[2] *= widthRatio;
+                vertices[4] *= widthRatio;
+                vertices[6] *= widthRatio;
+            } else {
+                float heightRatio = outputAspect / inputAspect;
+                vertices[1] *= heightRatio;
+                vertices[3] *= heightRatio;
+                vertices[5] *= heightRatio;
+                vertices[7] *= heightRatio;
+            }
+        }
+    }
+
+    private void swap(float[] arr, int index1, int index2) {
+        float temp = arr[index1];
+        arr[index1] = arr[index2];
+        arr[index2] = temp;
     }
 
     /**

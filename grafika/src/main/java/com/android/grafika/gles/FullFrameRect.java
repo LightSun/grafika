@@ -16,8 +16,6 @@
 
 package com.android.grafika.gles;
 
-import android.opengl.Matrix;
-
 /**
  * This class essentially represents a viewport-sized sprite that will be rendered with
  * a texture, usually from an external source like the camera or video decoder.
@@ -77,12 +75,21 @@ public class FullFrameRect {
         return mProgram.createTextureObject();
     }
 
+    public void setTransformation(Transformation transformation) {
+        mRectDrawable.setTransformation(transformation);
+    }
+
     /**
      * Draws a viewport-filling rect, texturing it with the specified texture object.
      */
     public void drawFrame(int textureId, float[] texMatrix) {
         // Use the identity matrix for MVP so our 2x2 FULL_RECTANGLE covers the viewport.
         drawFrame(textureId, GlUtil.IDENTITY_MATRIX, texMatrix);
+    }
+
+    public void drawFrame(int textureId) {
+        // Use the identity matrix for MVP so our 2x2 FULL_RECTANGLE covers the viewport.
+        drawFrame(textureId, GlUtil.IDENTITY_MATRIX, null);
     }
 
     /**

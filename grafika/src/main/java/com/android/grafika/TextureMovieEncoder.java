@@ -27,6 +27,7 @@ import android.util.Log;
 import com.android.grafika.gles.EglCore;
 import com.android.grafika.gles.FullFrameRect;
 import com.android.grafika.gles.Texture2dProgram;
+import com.android.grafika.gles.Transformation;
 import com.android.grafika.gles.WindowSurface;
 
 import java.io.File;
@@ -73,8 +74,10 @@ public class TextureMovieEncoder implements Runnable {
     private WindowSurface mInputWindowSurface;
     private EglCore mEglCore;
     private FullFrameRect mFullScreen;
+    private Transformation mTransformation = new Transformation();
     private int mTextureId;
     private int mFrameNum;
+    private EncoderConfig mEncoderConfig;
     private VideoEncoderCore mVideoEncoder;
 
     // ----- accessed by multiple threads -----
@@ -97,14 +100,21 @@ public class TextureMovieEncoder implements Runnable {
      */
     public static class EncoderConfig {
         final File mOutputFile;
+        final int mCaptureWidth;
+        final int mCaptureHeight;
+        final int mCameraOrientation;
         final int mWidth;
         final int mHeight;
         final int mBitRate;
         final EGLContext mEglContext;
 
-        public EncoderConfig(File outputFile, int width, int height, int bitRate,
+        public EncoderConfig(File outputFile, int captureWidth, int captureHeight,
+                int cameraOrientation, int width, int height, int bitRate,
                 EGLContext sharedEglContext) {
             mOutputFile = outputFile;
+            mCaptureWidth = captureWidth;
+            mCaptureHeight = captureHeight;
+            mCameraOrientation = cameraOrientation;
             mWidth = width;
             mHeight = height;
             mBitRate = bitRate;
@@ -309,8 +319,8 @@ public class TextureMovieEncoder implements Runnable {
     private void handleStartRecording(EncoderConfig config) {
         Log.d(TAG, "handleStartRecording " + config);
         mFrameNum = 0;
-        prepareEncoder(config.mEglContext, config.mWidth, config.mHeight, config.mBitRate,
-                config.mOutputFile);
+        mEncoderConfig = config;
+        prepareEncoder(config);
     }
 
     /**
@@ -324,8 +334,9 @@ public class TextureMovieEncoder implements Runnable {
      */
     private void handleFrameAvailable(float[] transform, long timestampNanos) {
         if (VERBOSE) Log.d(TAG, "handleFrameAvailable tr=" + transform);
+        GLES20.glViewport(0, 0, mEncoderConfig.mHeight, mEncoderConfig.mWidth);
+        mFullScreen.drawFrame(mTextureId);
         mVideoEncoder.drainEncoder(false);
-        mFullScreen.drawFrame(mTextureId, transform);
 
         drawBox(mFrameNum++);
 
@@ -373,21 +384,64 @@ public class TextureMovieEncoder implements Runnable {
         // Create new programs and such for the new context.
         mFullScreen = new FullFrameRect(
                 new Texture2dProgram(Texture2dProgram.ProgramType.TEXTURE_EXT));
+        switch (mEncoderConfig.mCameraOrientation) {
+            case 90:
+                mTransformation.setRotation(Transformation.ROTATION_270);
+                break;
+            case 180:
+                mTransformation.setRotation(Transformation.ROTATION_180);
+                break;
+            case 270:
+                mTransformation.setRotation(Transformation.ROTATION_90);
+                break;
+            case 0:
+            default:
+                mTransformation.setRotation(Transformation.ROTATION_0);
+                break;
+        }
+        mTransformation.setScale(
+                new Transformation.Size(mEncoderConfig.mCaptureHeight, mEncoderConfig.mCaptureWidth),
+                new Transformation.Size(mEncoderConfig.mHeight, mEncoderConfig.mWidth),
+                Transformation.SCALE_TYPE_CENTER_CROP
+        );
+        mFullScreen.setTransformation(mTransformation);
     }
 
-    private void prepareEncoder(EGLContext sharedContext, int width, int height, int bitRate,
-            File outputFile) {
+    private void prepareEncoder(EncoderConfig config) {
         try {
-            mVideoEncoder = new VideoEncoderCore(width, height, bitRate, outputFile);
+            mVideoEncoder = new VideoEncoderCore(config.mHeight, config.mWidth, config.mBitRate,
+                    config.mOutputFile);
         } catch (IOException ioe) {
             throw new RuntimeException(ioe);
         }
-        mEglCore = new EglCore(sharedContext, EglCore.FLAG_RECORDABLE);
+        mEglCore = new EglCore(config.mEglContext, EglCore.FLAG_RECORDABLE);
         mInputWindowSurface = new WindowSurface(mEglCore, mVideoEncoder.getInputSurface(), true);
         mInputWindowSurface.makeCurrent();
 
         mFullScreen = new FullFrameRect(
                 new Texture2dProgram(Texture2dProgram.ProgramType.TEXTURE_EXT));
+
+        switch (config.mCameraOrientation) {
+            case 90:
+                mTransformation.setRotation(Transformation.ROTATION_270);
+                break;
+            case 180:
+                mTransformation.setRotation(Transformation.ROTATION_180);
+                break;
+            case 270:
+                mTransformation.setRotation(Transformation.ROTATION_90);
+                break;
+            case 0:
+            default:
+                mTransformation.setRotation(Transformation.ROTATION_0);
+                break;
+        }
+        mTransformation.setScale(
+                new Transformation.Size(config.mCaptureHeight, config.mCaptureWidth),
+                new Transformation.Size(config.mHeight, config.mWidth),
+                Transformation.SCALE_TYPE_CENTER_CROP
+        );
+        mFullScreen.setTransformation(mTransformation);
     }
 
     private void releaseEncoder() {

@@ -19,8 +19,8 @@ package com.android.grafika;
 import android.opengl.EGL14;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
-import android.opengl.Matrix;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Message;
 import android.util.Log;
@@ -38,6 +38,7 @@ import android.hardware.Camera;
 import com.android.grafika.gles.FullFrameRect;
 import com.android.grafika.gles.Texture2dProgram;
 
+import com.android.grafika.gles.Transformation;
 import java.io.File;
 import java.io.IOException;
 import java.lang.ref.WeakReference;
@@ -138,7 +139,8 @@ public class CameraCaptureActivity extends Activity
     private CameraHandler mCameraHandler;
     private boolean mRecordingEnabled;      // controls button state
 
-    private int mCameraPreviewWidth, mCameraPreviewHeight;
+    private boolean mIsFrontCamera = true;
+    private int mCameraOrientation, mCameraPreviewWidth, mCameraPreviewHeight;
 
     // this is static so it survives activity restarts
     private static TextureMovieEncoder sVideoEncoder = new TextureMovieEncoder();
@@ -148,7 +150,7 @@ public class CameraCaptureActivity extends Activity
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_camera_capture);
 
-        File outputFile = new File(getFilesDir(), "camera-test.mp4");
+        File outputFile = new File(Environment.getExternalStorageDirectory(), "camera-test.mp4");
         TextView fileText = (TextView) findViewById(R.id.cameraOutputFile_text);
         fileText.setText(outputFile.toString());
 
@@ -185,14 +187,11 @@ public class CameraCaptureActivity extends Activity
         updateControls();
         openCamera(1280, 720);      // updates mCameraPreviewWidth/Height
 
-        // Set the preview aspect ratio.
-        //AspectFrameLayout layout = (AspectFrameLayout) findViewById(R.id.cameraPreview_afl);
-        //layout.setAspectRatio((double) mCameraPreviewWidth / mCameraPreviewHeight);
-
         mGLView.onResume();
         mGLView.queueEvent(new Runnable() {
             @Override public void run() {
-                mRenderer.setCameraPreviewSize(mCameraPreviewWidth, mCameraPreviewHeight);
+                mRenderer.setCameraPreviewInfo(mCameraPreviewWidth, mCameraPreviewHeight,
+                        mCameraOrientation);
             }
         });
         Log.d(TAG, "onResume complete: " + this);
@@ -253,9 +252,16 @@ public class CameraCaptureActivity extends Activity
         int numCameras = Camera.getNumberOfCameras();
         for (int i = 0; i < numCameras; i++) {
             Camera.getCameraInfo(i, info);
-            if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-                mCamera = Camera.open(i);
-                break;
+            if (mIsFrontCamera) {
+                if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+                    mCamera = Camera.open(i);
+                    break;
+                }
+            } else {
+                if (info.facing == Camera.CameraInfo.CAMERA_FACING_BACK) {
+                    mCamera = Camera.open(i);
+                    break;
+                }
             }
         }
         if (mCamera == null) {
@@ -292,6 +298,7 @@ public class CameraCaptureActivity extends Activity
 
         mCameraPreviewWidth = mCameraPreviewSize.width;
         mCameraPreviewHeight = mCameraPreviewSize.height;
+        mCameraOrientation = info.orientation;
     }
 
     /**
@@ -438,9 +445,6 @@ class CameraSurfaceRenderer implements GLSurfaceView.Renderer {
     private File mOutputFile;
 
     private FullFrameRect mFullScreen;
-
-    private final float[] mSTMatrix = new float[16];
-    private final float[] mMvpMatrix = new float[16];
     private int mTextureId;
 
     private SurfaceTexture mSurfaceTexture;
@@ -452,12 +456,13 @@ class CameraSurfaceRenderer implements GLSurfaceView.Renderer {
     private boolean mIncomingSizeUpdated;
     private int mIncomingWidth;
     private int mIncomingHeight;
-    private int mSurfaceWidth;
-    private int mSurfaceHeight;
+    private int mSurfaceWidth = -1;
+    private int mSurfaceHeight = -1;
 
     private int mCurrentFilter;
     private int mNewFilter;
-
+    private final Transformation mTransformation = new Transformation();
+    private int mCameraOrientation;
 
     /**
      * Constructs CameraSurfaceRenderer.
@@ -594,11 +599,31 @@ class CameraSurfaceRenderer implements GLSurfaceView.Renderer {
      * so we assume it could go either way.  (Fortunately they both run on the same thread,
      * so we at least know that they won't execute concurrently.)
      */
-    public void setCameraPreviewSize(int width, int height) {
-        Log.d(TAG, "setCameraPreviewSize " + width + "x" + height);
+
+    public void setCameraPreviewInfo(int width, int height, int cameraOrientation) {
+        Log.d(TAG, "setCameraPreviewSize " + width + "x" + height + "@" + cameraOrientation);
         mIncomingWidth = width;
         mIncomingHeight = height;
         mIncomingSizeUpdated = true;
+        mCameraOrientation = cameraOrientation;
+
+        switch (mCameraOrientation) {
+            case 90:
+                mTransformation.setRotation(Transformation.ROTATION_270);
+                break;
+            case 180:
+                mTransformation.setRotation(Transformation.ROTATION_180);
+                break;
+            case 270:
+                mTransformation.setRotation(Transformation.ROTATION_90);
+                break;
+            case 0:
+            default:
+                mTransformation.setRotation(Transformation.ROTATION_0);
+                break;
+        }
+
+        trySetTransformation();
     }
 
     @Override
@@ -637,6 +662,22 @@ class CameraSurfaceRenderer implements GLSurfaceView.Renderer {
         Log.d(TAG, "onSurfaceChanged " + width + "x" + height);
         mSurfaceWidth = width;
         mSurfaceHeight = height;
+
+        trySetTransformation();
+    }
+
+    private void trySetTransformation() {
+        if (mIncomingWidth == -1 || mIncomingHeight == -1
+                || mSurfaceWidth == -1 || mSurfaceHeight == -1) {
+            return;
+        }
+        mTransformation.setScale(
+                new Transformation.Size(mIncomingHeight, mIncomingWidth),
+                new Transformation.Size(mSurfaceWidth, mSurfaceHeight),
+                Transformation.SCALE_TYPE_CENTER_CROP
+        );
+
+        mFullScreen.setTransformation(mTransformation);
     }
 
     @Override
@@ -656,8 +697,9 @@ class CameraSurfaceRenderer implements GLSurfaceView.Renderer {
                 case RECORDING_OFF:
                     Log.d(TAG, "START recording");
                     // start recording
-                    mVideoEncoder.startRecording(new TextureMovieEncoder.EncoderConfig(
-                            mOutputFile, 640, 480, 1000000, EGL14.eglGetCurrentContext()));
+                    mVideoEncoder.startRecording(new TextureMovieEncoder.EncoderConfig(mOutputFile,
+                            mIncomingWidth, mIncomingHeight, mCameraOrientation,
+                            640, 480, 1000000, EGL14.eglGetCurrentContext()));
                     mRecordingStatus = RECORDING_ON;
                     break;
                 case RECORDING_RESUMED:
@@ -717,16 +759,8 @@ class CameraSurfaceRenderer implements GLSurfaceView.Renderer {
 
         GLES20.glViewport(0, 0, mSurfaceWidth, mSurfaceHeight);
 
-        Matrix.setIdentityM(mMvpMatrix, 0);
-        float inputAspect = (float) mIncomingWidth / mIncomingHeight;
-        float outputAspect = (float) mSurfaceHeight / mSurfaceWidth;
-        Matrix.perspectiveM(mMvpMatrix, 0, 45, inputAspect / outputAspect, 0.1f, 100f);
-        Matrix.translateM(mMvpMatrix, 0, 0, 0, -3f);
-        Matrix.rotateM(mMvpMatrix, 0, 90, 0, 0, 1);
-
         // Draw the video frame.
-        mSurfaceTexture.getTransformMatrix(mSTMatrix);
-        mFullScreen.drawFrame(mTextureId, mMvpMatrix, mSTMatrix);
+        mFullScreen.drawFrame(mTextureId);
 
         // Draw a flashing box if we're recording.  This only appears on screen.
         showBox = (mRecordingStatus == RECORDING_ON);
