@@ -82,14 +82,14 @@ public class FullFrameRect {
     /**
      * Draws a viewport-filling rect, texturing it with the specified texture object.
      */
+    public void drawFrame(int textureId) {
+        // Use the identity matrix for MVP so our 2x2 FULL_RECTANGLE covers the viewport.
+        drawFrame(textureId, GlUtil.IDENTITY_MATRIX, GlUtil.IDENTITY_MATRIX);
+    }
+
     public void drawFrame(int textureId, float[] texMatrix) {
         // Use the identity matrix for MVP so our 2x2 FULL_RECTANGLE covers the viewport.
         drawFrame(textureId, GlUtil.IDENTITY_MATRIX, texMatrix);
-    }
-
-    public void drawFrame(int textureId) {
-        // Use the identity matrix for MVP so our 2x2 FULL_RECTANGLE covers the viewport.
-        drawFrame(textureId, GlUtil.IDENTITY_MATRIX, null);
     }
 
     /**
