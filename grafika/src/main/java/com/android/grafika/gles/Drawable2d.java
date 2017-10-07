@@ -261,8 +261,8 @@ public class Drawable2d {
 
         // Note: scale type need to be implemented by adjusting
         // the vertices (not textureCoords).
-        if (inputWidth == outputWidth && inputHeight == outputHeight) {
-            // Optional optimization: If input size is the same as output size,
+        if (inputWidth * outputHeight == inputHeight * outputWidth) {
+            // Optional optimization: If input w/h aspect is the same as output's,
             // there is no need to adjust vertices at all.
             return;
         }
